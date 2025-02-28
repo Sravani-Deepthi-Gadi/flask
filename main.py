@@ -310,12 +310,13 @@ def get_logged_meals():
 
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
-    food_data = load_food_data()
-    
-    # ✅ Extract only food names from the list of dictionaries
+    food_data = load_food_data()  # ✅ Load food data properly
+
+    # ✅ Extract only food names as a list
     food_names = [item["Food Name"] for item in food_data if "Food Name" in item]
 
-    return jsonify({"food_items": food_names})
+    return jsonify(food_names)  # ✅ Return an array of strings, not objects
+
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
