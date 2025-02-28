@@ -257,21 +257,21 @@ def load_food_data():
         print("✅ First 5 rows of DataFrame:")
         print(df.head())  # Debugging
 
-        required_columns = ["Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
-        
+        required_columns = ["Food Name", "Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
+
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             print(f"❌ Missing columns in Excel: {missing_columns}")
             return []
 
         food_items = df.to_dict(orient="records")
-        print(f"✅ Loaded Food Data: {food_items[:5]}")  
+        print(f"✅ Loaded Food Data: {food_items[:5]}")  # Debugging
+
         return food_items
 
     except Exception as e:
         print(f"⚠ Error loading food database: {e}")
         return []
-
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
