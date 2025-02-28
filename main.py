@@ -8,8 +8,6 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from datetime import datetime
 import traceback
-from decimal import Decimal
-
 
 from itsdangerous import URLSafeTimedSerializer
 
@@ -232,68 +230,47 @@ def get_user_groups():
     return jsonify({"groups": group_names})
 
 
+@app.route("/api/log-meal", methods=["POST"])
+@jwt_required()
+def log_meal():
+    user_email = get_jwt_identity()
+    data = request.get_json()
+    if "meals" not in data:
+        return jsonify({"error": "Missing 'meals' in request"}), 400
+    
+    db.meal_collection.insert_one({
+        "user": user_email,
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "meals": data["meals"]
+    })
+    return jsonify({"message": "Meal logged successfully!"}), 201
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
-        print(f"📂 Looking for: {file_path}")
+        print(f"📂 Checking file at: {file_path}")  # Debugging
 
         if not os.path.exists(file_path):
             print("❌ File not found!")
             return []
 
         df = pd.read_excel(file_path, engine="openpyxl")
-        
-        required_columns = ["Food Name", "Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        print("✅ First 5 rows of DataFrame:")
+        print(df.head())  # Debugging
 
+        required_columns = ["Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
+        
+        missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             print(f"❌ Missing columns in Excel: {missing_columns}")
             return []
 
-        print("✅ File loaded successfully!")
-        return df.to_dict(orient="records")
+        food_items = df.to_dict(orient="records")
+        print(f"✅ Loaded Food Data: {food_items[:5]}")  
+        return food_items
 
     except Exception as e:
         print(f"⚠ Error loading food database: {e}")
         return []
-
-@app.route("/api/get-food-items", methods=["GET"])
-def get_food_items():
-    try:
-        food_data = load_food_data()
-        if not food_data:
-            return jsonify({"error": "Food database could not be loaded"}), 500
-        
-        return jsonify({"food_items": food_data}), 200
-
-    except Exception as e:
-        print(f"⚠ Error in API: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/log-meal", methods=["POST"])
-@jwt_required()
-def log_meal():
-    try:
-        user_email = get_jwt_identity()
-        data = request.json
-
-        if not isinstance(data.get("meals"), dict):
-            return jsonify({"error": "Invalid format: 'meals' must be a dictionary"}), 400
-
-        if not data["meals"]:
-            return jsonify({"error": "Meals cannot be empty"}), 400
-
-        meal_entry = {
-            "user": user_email,
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
-            "meals": data["meals"],
-        }
-
-        db.meal_collection.insert_one(meal_entry)
-        return jsonify({"message": "Meal logged successfully!"}), 201
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
@@ -301,33 +278,44 @@ def get_logged_meals():
     user_email = get_jwt_identity()
     
     meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+
     if not meals:
         return jsonify({"message": "No meals logged yet!"}), 200
 
-    food_data = load_food_data()
-    if not food_data:
-        return jsonify({"error": "Food database is unavailable"}), 500
+    # ✅ Load food database
+    food_data = load_food_data()  # Ensure this function returns a **list of dictionaries**
+    
+    # ✅ Convert food list into a dictionary for quick lookup
+    food_dict = {item["Food Name"]: item for item in food_data}
 
-    food_dict = {item.get("Food Name", "Unknown"): item for item in food_data}
-
+    # ✅ Calculate total nutrition values for logged meals
     for meal in meals:
-        meal["nutrition"] = {"calories": Decimal(0), "protein": Decimal(0), "carbs": Decimal(0), "fats": Decimal(0)}
+        meal["nutrition"] = {
+            "calories": 0,
+            "protein": 0,
+            "carbs": 0,
+            "fats": 0
+        }
 
+        # 🔹 **Fix: Iterate through the list of food items**
         for meal_type, food_list in meal["meals"].items():
-            for food in food_list:
+            for food in food_list:  # ✅ Iterate through list of foods
                 if food in food_dict:
-                    meal["nutrition"]["calories"] += Decimal(food_dict[food].get("Calories (kcal)", 0))
-                    meal["nutrition"]["protein"] += Decimal(food_dict[food].get("Protein (g)", 0))
-                    meal["nutrition"]["carbs"] += Decimal(food_dict[food].get("Carbohydrates (g)", 0))
-                    meal["nutrition"]["fats"] += Decimal(food_dict[food].get("Fats (g)", 0))
-
-        # Convert Decimal to float for JSON serialization
-        for key in meal["nutrition"]:
-            meal["nutrition"][key] = float(meal["nutrition"][key])
+                    meal["nutrition"]["calories"] += food_dict[food]["Calories (kcal)"]
+                    meal["nutrition"]["protein"] += food_dict[food]["Protein (g)"]
+                    meal["nutrition"]["carbs"] += food_dict[food]["Carbohydrates (g)"]
+                    meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
 
     return jsonify({"meals": meals}), 200
 
+@app.route("/api/get-food-items", methods=["GET"])
+def get_food_items():
+    food_data = load_food_data()
+    
+    # ✅ Extract only food names from the list of dictionaries
+    food_names = [item["Food Name"] for item in food_data if "Food Name" in item]
 
+    return jsonify({"food_items": food_names})
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
