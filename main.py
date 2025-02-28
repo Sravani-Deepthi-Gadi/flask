@@ -233,21 +233,30 @@ def get_user_groups():
 @app.route("/api/log-meal", methods=["POST"])
 @jwt_required()
 def log_meal():
-    user_email = get_jwt_identity()
-    data = request.get_json()
-    if "meals" not in data:
-        return jsonify({"error": "Missing 'meals' in request"}), 400
-    
-    db.meal_collection.insert_one({
-        "user": user_email,
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "meals": data["meals"]
-    })
-    return jsonify({"message": "Meal logged successfully!"}), 201
+    try:
+        user_email = get_jwt_identity()
+        data = request.json
+
+        if "meals" not in data:
+            return jsonify({"error": "Missing 'meals' field"}), 400
+
+        meal_entry = {
+            "user": user_email,
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),  
+            "meals": data["meals"],
+        }
+
+        db.meal_collection.insert_one(meal_entry)
+        return jsonify({"message": "Meal logged successfully!"}), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
-        print(f"📂 Checking file at: {file_path}")  # ✅ Debugging
+        print(f"📂 Checking file at: {file_path}")  # Debugging
 
         if not os.path.exists(file_path):
             print("❌ File not found!")
@@ -255,21 +264,23 @@ def load_food_data():
 
         df = pd.read_excel(file_path, engine="openpyxl")
         print("✅ First 5 rows of DataFrame:")
-        print(df.head())  # ✅ Debugging
+        print(df.head())  # Debugging
 
-        required_columns = ["Food Name"]  # ✅ Ensure column exists
+        required_columns = ["Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
         
-        if "Food Name" not in df.columns:
-            print("❌ Missing column: Food Name")
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            print(f"❌ Missing columns in Excel: {missing_columns}")
             return []
 
-        food_items = df["Food Name"].tolist()
-        print(f"✅ Loaded Food Items: {food_items[:5]}")  # ✅ Print first 5 items
+        food_items = df.to_dict(orient="records")
+        print(f"✅ Loaded Food Data: {food_items[:5]}")  
         return food_items
 
     except Exception as e:
         print(f"⚠ Error loading food database: {e}")
         return []
+
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
@@ -280,13 +291,10 @@ def get_logged_meals():
     if not meals:
         return jsonify({"message": "No meals logged yet!"}), 200
 
-    # ✅ Load food database
-    food_data = load_food_data()  # Ensure this function returns a **list of dictionaries**
+    food_data = load_food_data()  
     
-    # ✅ Convert food list into a dictionary for quick lookup
     food_dict = {item["Food Name"]: item for item in food_data}
 
-    # ✅ Calculate total nutrition values for logged meals
     for meal in meals:
         meal["nutrition"] = {
             "calories": 0,
@@ -295,7 +303,6 @@ def get_logged_meals():
             "fats": 0
         }
 
-        # 🔹 **Fix: Iterate through the list of food items**
         for meal_type, food_list in meal["meals"].items():
             for food in food_list:  # ✅ Iterate through list of foods
                 if food in food_dict:
@@ -306,16 +313,20 @@ def get_logged_meals():
 
     return jsonify({"meals": meals}), 200
 
+
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
-    food_data = load_food_data()  # ✅ Ensure this function returns a *list*
+    try:
+        food_data = load_food_data()
+        print(f"✅ Sending food items: {food_data}")  # Debugging
 
-    if not food_data:
-        print("❌ No food items found in database!")  # ✅ Debugging
-        return jsonify({"food_items": []})
+        response = jsonify({"food_items": food_data})
+        response.headers.add("Access-Control-Allow-Origin", "*")  # ✅ Fix CORS
+        return response
 
-    print(f"✅ Sending Food Items: {food_data[:5]}")  # ✅ Debugging
-    return jsonify({"food_items": food_data})  # ✅ Send list of food items
+    except Exception as e:
+        print(f"❌ Error fetching food items: {e}")
+        return jsonify({"error": "Failed to fetch food items"}), 500
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
