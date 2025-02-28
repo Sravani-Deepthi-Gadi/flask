@@ -235,6 +235,8 @@ def get_user_groups():
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
+        print(f"📂 Looking for: {file_path}")
+
         if not os.path.exists(file_path):
             print("❌ File not found!")
             return []
@@ -248,11 +250,25 @@ def load_food_data():
             print(f"❌ Missing columns in Excel: {missing_columns}")
             return []
 
+        print("✅ File loaded successfully!")
         return df.to_dict(orient="records")
 
     except Exception as e:
         print(f"⚠ Error loading food database: {e}")
         return []
+
+@app.route("/api/get-food-items", methods=["GET"])
+def get_food_items():
+    try:
+        food_data = load_food_data()
+        if not food_data:
+            return jsonify({"error": "Food database could not be loaded"}), 500
+        
+        return jsonify({"food_items": food_data}), 200
+
+    except Exception as e:
+        print(f"⚠ Error in API: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/log-meal", methods=["POST"])
 @jwt_required()
