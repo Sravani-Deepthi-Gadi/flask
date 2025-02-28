@@ -327,14 +327,6 @@ def get_logged_meals():
 
     return jsonify({"meals": meals}), 200
 
-@app.route("/api/get-food-items", methods=["GET"])
-def get_food_items():
-    food_data = load_food_data()
-    if not food_data:
-        return jsonify({"error": "Food database is unavailable"}), 500
-
-    food_names = [item.get("Food Name", "Unknown") for item in food_data]
-    return jsonify({"food_items": food_names})
 
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
