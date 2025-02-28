@@ -1,0 +1,9 @@
+runtime: python39
+entrypoint: gunicorn -b :$PORT main:app
+
+env_variables:
+  MONGO_URI: "mongodb+srv://pravallika:pralak1@cluster1.3ipip.mongodb.net/?retryWrites=true&w=majority&appName=cluster1"
+  JWT_SECRET_KEY: "NOSECRET"
+handlers:
+  - url: /.*
+    script: auto
