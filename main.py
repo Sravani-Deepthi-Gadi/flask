@@ -108,28 +108,44 @@ def like_achievement():
         return jsonify({"message":"Achievement liked!"}),200
     return jsonify({"error": "Achievement not found"}),404
 
-@app.route("/api/join-group",methods=["POST"])
+@app.route("/api/join-group", methods=["POST"])
 @jwt_required()
 def join_group():
-    data=request.json
-    user=get_jwt_identity()
-    group_name=data.get("group_name")
+    try:
+        data = request.json
+        user = get_jwt_identity()
+        group_name = data.get("group_name")
 
-    if not group_name:
-        return jsonify({"error":"Group name is required"}),400
+        if not group_name:
+            return jsonify({"error": "Group name is required"}), 400
 
-    group = groups_collection.find_one({"name":group_name})
+        print(f"🔍 Checking for group: {group_name}")  # Debugging
 
-    if not group:
-        groups_collection.insert_one({"name":group_name,"members": [user],"posts":[]})
-        return jsonify({"message": f"Group '{group_name}'created and joined successfully!"}),201
+        group = groups_collection.find_one({"name": group_name})
 
-    if user not in group["members"]:
-        groups_collection.update_one({"name":group_name},{"$push":{"members": user}})
-        return jsonify({"message":f"Joined {group_name} successfully!"}),200
+        print(f"✅ Group found: {group}")  # Debugging
 
-    return jsonify({"message":f"Already a member of {group_name}!"}),200
+        if not group:
+            print(f"🆕 Creating new group: {group_name}")  # Debugging
+            groups_collection.insert_one({"name": group_name, "members": [user], "posts": []})
+            return jsonify({"message": f"Group '{group_name}' created and joined successfully!"}), 201
 
+        # Ensure 'members' is a list before checking or updating
+        if "members" not in group or not isinstance(group["members"], list):
+            print(f"⚠️ Fixing 'members' field for group: {group_name}")  # Debugging
+            groups_collection.update_one({"name": group_name}, {"$set": {"members": []}})
+
+        if user in group.get("members", []):
+            print(f"🛑 User {user} is already in the group: {group_name}")  # Debugging
+            return jsonify({"message": f"Already a member of {group_name}!"}), 200
+
+        print(f"📌 Adding user {user} to group: {group_name}")  # Debugging
+        groups_collection.update_one({"name": group_name}, {"$push": {"members": user}})
+        return jsonify({"message": f"Joined {group_name} successfully!"}), 200
+
+    except Exception as e:
+        print(f"❌ ERROR: {str(e)}")  # Print error to console
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/group-post",methods=["POST"])
 @jwt_required()
@@ -316,17 +332,12 @@ def get_logged_meals():
 
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
-    try:
-        food_data = load_food_data()
-        print(f"✅ Sending food items: {food_data}")  # Debugging
+    food_data = load_food_data()  
 
-        response = jsonify({"food_items": food_data})
-        response.headers.add("Access-Control-Allow-Origin", "*")  # ✅ Fix CORS
-        return response
+    food_names = [item["Food Name"] for item in food_data if "Food Name" in item]
 
-    except Exception as e:
-        print(f"❌ Error fetching food items: {e}")
-        return jsonify({"error": "Failed to fetch food items"}), 500
+    return jsonify({"food_items": food_names})
+
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
@@ -498,7 +509,18 @@ def post_badge():
     except Exception as e:
         print(f"⚠ Error in /api/post-badge: {str(e)}")
         return jsonify({"error": "Internal Server Error"}), 500
-
+@app.route("/test-read-excel", methods=["GET"])
+def test_read_excel():
+    try:
+        file_path = os.path.join(os.getcwd(), "food_database.xlsx")  # Ensure correct path
+        df = pd.read_excel(file_path)  # Read the Excel file
+        return jsonify({
+            "status": "success",
+            "columns": df.columns.tolist(),
+            "sample_data": df.head(5).to_dict(orient="records")
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)
