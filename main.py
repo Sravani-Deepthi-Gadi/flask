@@ -282,26 +282,33 @@ def load_food_data():
         print(f"⚠ Error loading food database: {e}")
         return []
 
+logging.basicConfig(level=logging.DEBUG)
+
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
     try:
         user_email = get_jwt_identity()
+        logging.debug(f"User Email: {user_email}")
         
         # Fetch logged meals from database
         meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+        logging.debug(f"Meals from DB: {meals}")
 
         if not meals:
+            logging.info("No meals found for user.")
             return jsonify({"message": "No meals logged yet!"}), 200
 
         # Load food data
         food_data = load_food_data()
+        logging.debug(f"Food Data: {food_data}")
         
         if not food_data:
             logging.error("Food data is empty or failed to load.")
             return jsonify({"message": "Failed to load food data."}), 500
 
         food_dict = {item["Food Name"]: item for item in food_data}
+        logging.debug(f"Food Dictionary: {food_dict}")
 
         # Process meals
         for meal in meals:
@@ -327,8 +334,7 @@ def get_logged_meals():
     except Exception as e:
         logging.error(f"Error fetching meals: {str(e)}")
         return jsonify({"message": "Error fetching meals, please try again later."}), 500
-
-
+    
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
     food_data = load_food_data()  
