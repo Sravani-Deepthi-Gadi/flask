@@ -288,10 +288,11 @@ logging.basicConfig(level=logging.DEBUG)
 @jwt_required()
 def get_logged_meals():
     try:
+        # Retrieve user email from JWT token
         user_email = get_jwt_identity()
         logging.debug(f"User Email: {user_email}")
         
-        # Fetch logged meals from database
+        # Fetch logged meals from the database for the authenticated user
         meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
         logging.debug(f"Meals from DB: {meals}")
 
@@ -299,7 +300,7 @@ def get_logged_meals():
             logging.info("No meals found for user.")
             return jsonify({"message": "No meals logged yet!"}), 200
 
-        # Load food data
+        # Load food data from an external source
         food_data = load_food_data()
         logging.debug(f"Food Data: {food_data}")
         
@@ -307,10 +308,11 @@ def get_logged_meals():
             logging.error("Food data is empty or failed to load.")
             return jsonify({"message": "Failed to load food data."}), 500
 
+        # Creating a dictionary for quick lookup
         food_dict = {item["Food Name"]: item for item in food_data}
         logging.debug(f"Food Dictionary: {food_dict}")
 
-        # Process meals
+        # Process meals and calculate nutrition info
         for meal in meals:
             meal["nutrition"] = {
                 "calories": 0,
@@ -319,15 +321,17 @@ def get_logged_meals():
                 "fats": 0
             }
 
+            # Loop through the meals and calculate total nutrition
             for meal_type, food_list in meal["meals"].items():
                 for food in food_list:
                     if food in food_dict:
+                        # Retrieve food nutrition and accumulate values
                         meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
                         meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
                         meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
                         meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
                     else:
-                        logging.warning(f"Food item {food} not found in food data.")
+                        logging.warning(f"Food item '{food}' not found in food data.")
 
         return jsonify({"meals": meals}), 200
 
