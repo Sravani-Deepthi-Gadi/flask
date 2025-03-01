@@ -8,6 +8,7 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from datetime import datetime
 import traceback
+import logging
 
 from itsdangerous import URLSafeTimedSerializer
 
@@ -284,34 +285,48 @@ def load_food_data():
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
-    user_email = get_jwt_identity()
-    
-    meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+    try:
+        user_email = get_jwt_identity()
+        
+        # Fetch logged meals from database
+        meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
 
-    if not meals:
-        return jsonify({"message": "No meals logged yet!"}), 200
+        if not meals:
+            return jsonify({"message": "No meals logged yet!"}), 200
 
-    food_data = load_food_data()  
-    
-    food_dict = {item["Food Name"]: item for item in food_data}
+        # Load food data
+        food_data = load_food_data()
+        
+        if not food_data:
+            logging.error("Food data is empty or failed to load.")
+            return jsonify({"message": "Failed to load food data."}), 500
 
-    for meal in meals:
-        meal["nutrition"] = {
-            "calories": 0,
-            "protein": 0,
-            "carbs": 0,
-            "fats": 0
-        }
+        food_dict = {item["Food Name"]: item for item in food_data}
 
-        for meal_type, food_list in meal["meals"].items():
-            for food in food_list:  # ✅ Iterate through list of foods
-                if food in food_dict:
-                    meal["nutrition"]["calories"] += food_dict[food]["Calories (kcal)"]
-                    meal["nutrition"]["protein"] += food_dict[food]["Protein (g)"]
-                    meal["nutrition"]["carbs"] += food_dict[food]["Carbohydrates (g)"]
-                    meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
+        # Process meals
+        for meal in meals:
+            meal["nutrition"] = {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fats": 0
+            }
 
-    return jsonify({"meals": meals}), 200
+            for meal_type, food_list in meal["meals"].items():
+                for food in food_list:
+                    if food in food_dict:
+                        meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
+                        meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
+                        meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
+                        meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
+                    else:
+                        logging.warning(f"Food item {food} not found in food data.")
+
+        return jsonify({"meals": meals}), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching meals: {str(e)}")
+        return jsonify({"message": "Error fetching meals, please try again later."}), 500
 
 
 @app.route("/api/get-food-items", methods=["GET"])
