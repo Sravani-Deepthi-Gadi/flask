@@ -2,12 +2,16 @@ import os
 import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
 import bcrypt
+from main import db, food_dict
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from datetime import datetime
 import traceback
+from flask import Blueprint, jsonify, request
+meals_bp = Blueprint("meals", __name__)
 
 from itsdangerous import URLSafeTimedSerializer
 
@@ -108,44 +112,28 @@ def like_achievement():
         return jsonify({"message":"Achievement liked!"}),200
     return jsonify({"error": "Achievement not found"}),404
 
-@app.route("/api/join-group", methods=["POST"])
+@app.route("/api/join-group",methods=["POST"])
 @jwt_required()
 def join_group():
-    try:
-        data = request.json
-        user = get_jwt_identity()
-        group_name = data.get("group_name")
+    data=request.json
+    user=get_jwt_identity()
+    group_name=data.get("group_name")
 
-        if not group_name:
-            return jsonify({"error": "Group name is required"}), 400
+    if not group_name:
+        return jsonify({"error":"Group name is required"}),400
 
-        print(f"🔍 Checking for group: {group_name}")  # Debugging
+    group = groups_collection.find_one({"name":group_name})
 
-        group = groups_collection.find_one({"name": group_name})
+    if not group:
+        groups_collection.insert_one({"name":group_name,"members": [user],"posts":[]})
+        return jsonify({"message": f"Group '{group_name}'created and joined successfully!"}),201
 
-        print(f"✅ Group found: {group}")  # Debugging
+    if user not in group["members"]:
+        groups_collection.update_one({"name":group_name},{"$push":{"members": user}})
+        return jsonify({"message":f"Joined {group_name} successfully!"}),200
 
-        if not group:
-            print(f"🆕 Creating new group: {group_name}")  # Debugging
-            groups_collection.insert_one({"name": group_name, "members": [user], "posts": []})
-            return jsonify({"message": f"Group '{group_name}' created and joined successfully!"}), 201
+    return jsonify({"message":f"Already a member of {group_name}!"}),200
 
-        # Ensure 'members' is a list before checking or updating
-        if "members" not in group or not isinstance(group["members"], list):
-            print(f"⚠️ Fixing 'members' field for group: {group_name}")  # Debugging
-            groups_collection.update_one({"name": group_name}, {"$set": {"members": []}})
-
-        if user in group.get("members", []):
-            print(f"🛑 User {user} is already in the group: {group_name}")  # Debugging
-            return jsonify({"message": f"Already a member of {group_name}!"}), 200
-
-        print(f"📌 Adding user {user} to group: {group_name}")  # Debugging
-        groups_collection.update_one({"name": group_name}, {"$push": {"members": user}})
-        return jsonify({"message": f"Joined {group_name} successfully!"}), 200
-
-    except Exception as e:
-        print(f"❌ ERROR: {str(e)}")  # Print error to console
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/group-post",methods=["POST"])
 @jwt_required()
@@ -246,29 +234,6 @@ def get_user_groups():
     return jsonify({"groups": group_names})
 
 
-@app.route("/api/log-meal", methods=["POST"])
-@jwt_required()
-def log_meal():
-    try:
-        user_email = get_jwt_identity()
-        data = request.json
-
-        if "meals" not in data:
-            return jsonify({"error": "Missing 'meals' field"}), 400
-
-        meal_entry = {
-            "user": user_email,
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),  
-            "meals": data["meals"],
-        }
-
-        db.meal_collection.insert_one(meal_entry)
-        return jsonify({"message": "Meal logged successfully!"}), 201
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
@@ -297,46 +262,91 @@ def load_food_data():
         print(f"⚠ Error loading food database: {e}")
         return []
 
-@app.route("/api/get-logged-meals", methods=["GET"])
+@app.route("/api/log-meal", methods=["POST"])
 @jwt_required()
-def get_logged_meals():
-    user_email = get_jwt_identity()
-    
-    meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+def log_meal():
+    """Logs a user's meal entry into the database."""
+    try:
+        user_email = get_jwt_identity()
+        data = request.json
 
-    if not meals:
-        return jsonify({"message": "No meals logged yet!"}), 200
+        if not data or "meals" not in data:
+            return jsonify({"error": "Missing 'meals' field"}), 400
 
-    food_data = load_food_data()  
-    
-    food_dict = {item["Food Name"]: item for item in food_data}
-
-    for meal in meals:
-        meal["nutrition"] = {
-            "calories": 0,
-            "protein": 0,
-            "carbs": 0,
-            "fats": 0
+        meal_entry = {
+            "user": user_email,
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),  
+            "meals": data["meals"],
         }
 
-        for meal_type, food_list in meal["meals"].items():
-            for food in food_list:  # ✅ Iterate through list of foods
-                if food in food_dict:
-                    meal["nutrition"]["calories"] += food_dict[food]["Calories (kcal)"]
-                    meal["nutrition"]["protein"] += food_dict[food]["Protein (g)"]
-                    meal["nutrition"]["carbs"] += food_dict[food]["Carbohydrates (g)"]
-                    meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
+        db.meal_collection.insert_one(meal_entry)
+        return jsonify({"message": "Meal logged successfully!"}), 201
 
-    return jsonify({"meals": meals}), 200
-
-
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
     food_data = load_food_data()  
 
-    food_names = [item["Food Name"] for item in food_data if "Food Name" in item]
+    food_names = [item.get("Food Name", "Unknown") for item in food_data]
 
     return jsonify({"food_items": food_names})
+
+from flask import jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+import traceback
+
+@meals_bp.route("/api/get-logged-meals", methods=["GET"])
+@jwt_required()
+def get_logged_meals():
+    try:
+        # ✅ Get current user email
+        current_user = get_jwt_identity()
+
+        # ✅ Retrieve meal records for the user
+        meals = list(db.meal_collection.find({"user": current_user}, {"_id": 0}))
+
+        # ✅ If no meals found, return an empty response
+        if not meals:
+            return jsonify({"message": "No meals logged yet", "meals": []}), 200
+
+        # ✅ Process each meal entry
+        for meal in meals:
+            # ✅ Ensure the `nutrition` field is initialized
+            if "nutrition" not in meal:
+                meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+
+            # ✅ Iterate through meal types (e.g., Breakfast, Lunch, Dinner)
+            for meal_type, food_list in meal["meals"].items():
+                # ✅ Convert string meals to list format
+                if isinstance(food_list, str):
+                    food_list = [{"name": food_list}]
+
+                # ✅ Ensure food_list is a valid list
+                if not isinstance(food_list, list):
+                    print(f"Skipping invalid food list in meal type '{meal_type}': {food_list}")
+                    continue  
+
+                # ✅ Compute nutrition by looking up food details
+                for food in food_list:
+                    # ✅ Extract food name from dictionary or string
+                    food_name = food["name"] if isinstance(food, dict) else food
+
+                    # ✅ Lookup food in the dictionary
+                    if food_name in food_dict:
+                        meal["nutrition"]["calories"] += food_dict[food_name].get("Calories (kcal)", 0)
+                        meal["nutrition"]["protein"] += food_dict[food_name].get("Protein (g)", 0)
+                        meal["nutrition"]["carbs"] += food_dict[food_name].get("Carbohydrates (g)", 0)
+                        meal["nutrition"]["fats"] += food_dict[food_name].get("Fats (g)", 0)
+                    else:
+                        print(f"Warning: Food item '{food_name}' not found in database.")
+
+        # ✅ Return meals with computed nutrition data
+        return jsonify({"message": "Success", "meals": meals}), 200
+
+    except Exception as e:
+        print(f"Error in get_logged_meals: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
