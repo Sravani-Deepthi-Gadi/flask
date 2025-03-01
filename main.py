@@ -299,7 +299,7 @@ import traceback
 def get_logged_meals():
     try:
         user_email = get_jwt_identity()
-
+        
         # ✅ Fetch meals from the database
         meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
 
@@ -308,51 +308,37 @@ def get_logged_meals():
 
         # ✅ Load food database
         food_data = load_food_data()
-
-        if not food_data or not isinstance(food_data, list):
-            print("⚠ Error: Food database is empty or not a list!")
+        
+        if not food_data:
+            print("⚠ Error: Food database is empty!")
             return jsonify({"error": "Food database is empty!"}), 500
 
-        # ✅ Convert food list into a dictionary for quick lookup (Ensure keys are strings)
-        food_dict = {}
-        for item in food_data:
-            if isinstance(item, dict) and "Food Name" in item:
-                key = str(item["Food Name"])  # Ensure the key is a string
-                food_dict[key] = item
-        
+        # ✅ Convert food list into a dictionary for quick lookup
+        food_dict = {item["Food Name"]: item for item in food_data if "Food Name" in item}
+
         print("✅ Food Dictionary Loaded:", food_dict)  # Debugging
 
         # ✅ Calculate total nutrition values for logged meals
         for meal in meals:
             meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
 
-            # Ensure `meal["meals"]` is a dictionary
-            if not isinstance(meal.get("meals", {}), dict):
-                print(f"⚠ Warning: Invalid meal format for {meal}")
-                continue
-
-            for meal_type, food_list in meal["meals"].items():
-                if not isinstance(food_list, list):
-                    print(f"⚠ Warning: {meal_type} in {meal} is not a list.")
-                    continue  # Skip if it's not a list
-
+            for meal_type, food_list in meal.get("meals", {}).items():
                 for food in food_list:
-                    food_key = str(food)  # Ensure food name is a string
-                    if food_key in food_dict:
-                        meal["nutrition"]["calories"] += food_dict[food_key].get("Calories (kcal)", 0)
-                        meal["nutrition"]["protein"] += food_dict[food_key].get("Protein (g)", 0)
-                        meal["nutrition"]["carbs"] += food_dict[food_key].get("Carbohydrates (g)", 0)
-                        meal["nutrition"]["fats"] += food_dict[food_key].get("Fats (g)", 0)
+                    if food in food_dict:
+                        meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
+                        meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
+                        meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
+                        meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
                     else:
-                        print(f"⚠ Warning: {food_key} not found in food database!")
+                        print(f"⚠ Warning: {food} not found in food database!")
 
         return jsonify({"meals": meals}), 200
 
     except Exception as e:
         print(f"❌ ERROR: {str(e)}")
+        import traceback
         traceback.print_exc()
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
-
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
