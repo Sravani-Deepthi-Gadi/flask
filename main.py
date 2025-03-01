@@ -297,48 +297,39 @@ import traceback
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
-    try:
-        user_email = get_jwt_identity()
-        
-        # ✅ Fetch meals from the database
-        meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+    user_email = get_jwt_identity()
+    
+    meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
 
-        if not meals:
-            return jsonify({"message": "No meals logged yet!"}), 200
+    if not meals:
+        return jsonify({"message": "No meals logged yet!"}), 200
 
-        # ✅ Load food database
-        food_data = load_food_data()
-        
-        if not food_data:
-            print("⚠ Error: Food database is empty!")
-            return jsonify({"error": "Food database is empty!"}), 500
+    # ✅ Load food database
+    food_data = load_food_data()  # Ensure this function returns a *list of dictionaries*
+    
+    # ✅ Convert food list into a dictionary for quick lookup
+    food_dict = {item["Food Name"]: item for item in food_data}
 
-        # ✅ Convert food list into a dictionary for quick lookup
-        food_dict = {item["Food Name"]: item for item in food_data if "Food Name" in item}
+    # ✅ Calculate total nutrition values for logged meals
+    for meal in meals:
+        meal["nutrition"] = {
+            "calories": 0,
+            "protein": 0,
+            "carbs": 0,
+            "fats": 0
+        }
 
-        print("✅ Food Dictionary Loaded:", food_dict)  # Debugging
+        # 🔹 *Fix: Iterate through the list of food items*
+        for meal_type, food_list in meal["meals"].items():
+            for food in food_list:  # ✅ Iterate through list of foods
+                if food in food_dict:
+                    meal["nutrition"]["calories"] += food_dict[food]["Calories (kcal)"]
+                    meal["nutrition"]["protein"] += food_dict[food]["Protein (g)"]
+                    meal["nutrition"]["carbs"] += food_dict[food]["Carbohydrates (g)"]
+                    meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
 
-        # ✅ Calculate total nutrition values for logged meals
-        for meal in meals:
-            meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+    return jsonify({"meals": meals}), 200
 
-            for meal_type, food_list in meal.get("meals", {}).items():
-                for food in food_list:
-                    if food in food_dict:
-                        meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
-                        meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
-                        meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
-                        meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
-                    else:
-                        print(f"⚠ Warning: {food} not found in food database!")
-
-        return jsonify({"meals": meals}), 200
-
-    except Exception as e:
-        print(f"❌ ERROR: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
