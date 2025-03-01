@@ -5,13 +5,11 @@ from flask_cors import CORS
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
 import bcrypt
-from main import db, food_dict
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from datetime import datetime
 import traceback
 from flask import Blueprint, jsonify, request
-meals_bp = Blueprint("meals", __name__)
 
 from itsdangerous import URLSafeTimedSerializer
 
@@ -296,57 +294,41 @@ from flask import jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import traceback
 
-@meals_bp.route("/api/get-logged-meals", methods=["GET"])
+@app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
-    try:
-        # ✅ Get current user email
-        current_user = get_jwt_identity()
+    user_email = get_jwt_identity()
+    
+    meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
 
-        # ✅ Retrieve meal records for the user
-        meals = list(db.meal_collection.find({"user": current_user}, {"_id": 0}))
+    if not meals:
+        return jsonify({"message": "No meals logged yet!"}), 200
 
-        # ✅ If no meals found, return an empty response
-        if not meals:
-            return jsonify({"message": "No meals logged yet", "meals": []}), 200
+    # ✅ Load food database
+    food_data = load_food_data()  # Ensure this function returns a *list of dictionaries*
+    
+    # ✅ Convert food list into a dictionary for quick lookup
+    food_dict = {item["Food Name"]: item for item in food_data}
 
-        # ✅ Process each meal entry
-        for meal in meals:
-            # ✅ Ensure the `nutrition` field is initialized
-            if "nutrition" not in meal:
-                meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+    # ✅ Calculate total nutrition values for logged meals
+    for meal in meals:
+        meal["nutrition"] = {
+            "calories": 0,
+            "protein": 0,
+            "carbs": 0,
+            "fats": 0
+        }
 
-            # ✅ Iterate through meal types (e.g., Breakfast, Lunch, Dinner)
-            for meal_type, food_list in meal["meals"].items():
-                # ✅ Convert string meals to list format
-                if isinstance(food_list, str):
-                    food_list = [{"name": food_list}]
+        # 🔹 *Fix: Iterate through the list of food items*
+        for meal_type, food_list in meal["meals"].items():
+            for food in food_list:  # ✅ Iterate through list of foods
+                if food in food_dict:
+                    meal["nutrition"]["calories"] += food_dict[food]["Calories (kcal)"]
+                    meal["nutrition"]["protein"] += food_dict[food]["Protein (g)"]
+                    meal["nutrition"]["carbs"] += food_dict[food]["Carbohydrates (g)"]
+                    meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
 
-                # ✅ Ensure food_list is a valid list
-                if not isinstance(food_list, list):
-                    print(f"Skipping invalid food list in meal type '{meal_type}': {food_list}")
-                    continue  
-
-                # ✅ Compute nutrition by looking up food details
-                for food in food_list:
-                    # ✅ Extract food name from dictionary or string
-                    food_name = food["name"] if isinstance(food, dict) else food
-
-                    # ✅ Lookup food in the dictionary
-                    if food_name in food_dict:
-                        meal["nutrition"]["calories"] += food_dict[food_name].get("Calories (kcal)", 0)
-                        meal["nutrition"]["protein"] += food_dict[food_name].get("Protein (g)", 0)
-                        meal["nutrition"]["carbs"] += food_dict[food_name].get("Carbohydrates (g)", 0)
-                        meal["nutrition"]["fats"] += food_dict[food_name].get("Fats (g)", 0)
-                    else:
-                        print(f"Warning: Food item '{food_name}' not found in database.")
-
-        # ✅ Return meals with computed nutrition data
-        return jsonify({"message": "Success", "meals": meals}), 200
-
-    except Exception as e:
-        print(f"Error in get_logged_meals: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+    return jsonify({"meals": meals}), 200
 
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
