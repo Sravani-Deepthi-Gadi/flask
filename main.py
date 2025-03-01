@@ -2,14 +2,12 @@ import os
 import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
 import bcrypt
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from datetime import datetime
 import traceback
-from flask import Blueprint, jsonify, request
 
 from itsdangerous import URLSafeTimedSerializer
 
@@ -232,6 +230,29 @@ def get_user_groups():
     return jsonify({"groups": group_names})
 
 
+@app.route("/api/log-meal", methods=["POST"])
+@jwt_required()
+def log_meal():
+    try:
+        user_email = get_jwt_identity()
+        data = request.json
+
+        if "meals" not in data:
+            return jsonify({"error": "Missing 'meals' field"}), 400
+
+        meal_entry = {
+            "user": user_email,
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),  
+            "meals": data["meals"],
+        }
+
+        db.meal_collection.insert_one(meal_entry)
+        return jsonify({"message": "Meal logged successfully!"}), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
@@ -260,40 +281,6 @@ def load_food_data():
         print(f"⚠ Error loading food database: {e}")
         return []
 
-@app.route("/api/log-meal", methods=["POST"])
-@jwt_required()
-def log_meal():
-    """Logs a user's meal entry into the database."""
-    try:
-        user_email = get_jwt_identity()
-        data = request.json
-
-        if not data or "meals" not in data:
-            return jsonify({"error": "Missing 'meals' field"}), 400
-
-        meal_entry = {
-            "user": user_email,
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),  
-            "meals": data["meals"],
-        }
-
-        db.meal_collection.insert_one(meal_entry)
-        return jsonify({"message": "Meal logged successfully!"}), 201
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-@app.route("/api/get-food-items", methods=["GET"])
-def get_food_items():
-    food_data = load_food_data()  
-
-    food_names = [item.get("Food Name", "Unknown") for item in food_data]
-
-    return jsonify({"food_items": food_names})
-
-from flask import jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-import traceback
-
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
@@ -304,13 +291,10 @@ def get_logged_meals():
     if not meals:
         return jsonify({"message": "No meals logged yet!"}), 200
 
-    # ✅ Load food database
-    food_data = load_food_data()  # Ensure this function returns a *list of dictionaries*
+    food_data = load_food_data()  
     
-    # ✅ Convert food list into a dictionary for quick lookup
     food_dict = {item["Food Name"]: item for item in food_data}
 
-    # ✅ Calculate total nutrition values for logged meals
     for meal in meals:
         meal["nutrition"] = {
             "calories": 0,
@@ -319,7 +303,6 @@ def get_logged_meals():
             "fats": 0
         }
 
-        # 🔹 *Fix: Iterate through the list of food items*
         for meal_type, food_list in meal["meals"].items():
             for food in food_list:  # ✅ Iterate through list of foods
                 if food in food_dict:
@@ -329,6 +312,15 @@ def get_logged_meals():
                     meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
 
     return jsonify({"meals": meals}), 200
+
+
+@app.route("/api/get-food-items", methods=["GET"])
+def get_food_items():
+    food_data = load_food_data()  
+
+    food_names = [item.get("Food Name", "Unknown") for item in food_data]
+
+    return jsonify({"food_items": food_names})
 
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
