@@ -231,6 +231,10 @@ def get_user_groups():
     return jsonify({"groups": group_names})
 
 
+# Setting up logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Log meal API
 @app.route("/api/log-meal", methods=["POST"])
 @jwt_required()
 def log_meal():
@@ -243,56 +247,56 @@ def log_meal():
 
         meal_entry = {
             "user": user_email,
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),  
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),
             "meals": data["meals"],
         }
 
         db.meal_collection.insert_one(meal_entry)
+        logging.info(f"Meal logged successfully for user {user_email}")
         return jsonify({"message": "Meal logged successfully!"}), 201
 
     except Exception as e:
+        logging.error(f"Error logging meal: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 
+# Load food data
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
-        print(f"📂 Checking file at: {file_path}")  # Debugging
+        logging.debug(f"📂 Checking file at: {file_path}")
 
         if not os.path.exists(file_path):
-            print("❌ File not found!")
+            logging.error("❌ File not found!")
             return []
 
         df = pd.read_excel(file_path, engine="openpyxl")
-        print("✅ First 5 rows of DataFrame:")
-        print(df.head())  # Debugging
+        logging.debug(f"✅ First 5 rows of DataFrame: {df.head()}")
 
         required_columns = ["Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
         
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            print(f"❌ Missing columns in Excel: {missing_columns}")
+            logging.error(f"❌ Missing columns in Excel: {missing_columns}")
             return []
 
         food_items = df.to_dict(orient="records")
-        print(f"✅ Loaded Food Data: {food_items[:5]}")  
+        logging.debug(f"✅ Loaded Food Data: {food_items[:5]}")
         return food_items
 
     except Exception as e:
-        print(f"⚠ Error loading food database: {e}")
+        logging.error(f"⚠ Error loading food database: {e}")
         return []
 
-logging.basicConfig(level=logging.DEBUG)
 
+# Get logged meals API
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
     try:
-        # Retrieve user email from JWT token
         user_email = get_jwt_identity()
         logging.debug(f"User Email: {user_email}")
         
-        # Fetch logged meals from the database for the authenticated user
         meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
         logging.debug(f"Meals from DB: {meals}")
 
@@ -300,7 +304,6 @@ def get_logged_meals():
             logging.info("No meals found for user.")
             return jsonify({"message": "No meals logged yet!"}), 200
 
-        # Load food data from an external source
         food_data = load_food_data()
         logging.debug(f"Food Data: {food_data}")
         
@@ -308,24 +311,15 @@ def get_logged_meals():
             logging.error("Food data is empty or failed to load.")
             return jsonify({"message": "Failed to load food data."}), 500
 
-        # Creating a dictionary for quick lookup
         food_dict = {item["Food Name"]: item for item in food_data}
         logging.debug(f"Food Dictionary: {food_dict}")
 
-        # Process meals and calculate nutrition info
         for meal in meals:
-            meal["nutrition"] = {
-                "calories": 0,
-                "protein": 0,
-                "carbs": 0,
-                "fats": 0
-            }
-
-            # Loop through the meals and calculate total nutrition
+            meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+            
             for meal_type, food_list in meal["meals"].items():
                 for food in food_list:
                     if food in food_dict:
-                        # Retrieve food nutrition and accumulate values
                         meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
                         meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
                         meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
@@ -338,15 +332,14 @@ def get_logged_meals():
     except Exception as e:
         logging.error(f"Error fetching meals: {str(e)}")
         return jsonify({"message": "Error fetching meals, please try again later."}), 500
-    
+
+
+# Get food items API
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
-    food_data = load_food_data()  
-
+    food_data = load_food_data()
     food_names = [item.get("Food Name", "Unknown") for item in food_data]
-
     return jsonify({"food_items": food_names})
-
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
 def track_progress():
