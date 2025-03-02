@@ -322,26 +322,37 @@ def log_meal():
         "total_nutrition": meal_entry["nutrition"]
     }), 201
 
-# ✅ Get Logged Meals (Modified to Include Total Nutrition)
 @app.route("/api/get-meals", methods=["GET"])
 @jwt_required()
 def get_meals():
     user_email = get_jwt_identity()
 
-    meals = list(meal_collection.find({"user": user_email}, {"_id": 0}))  # Exclude `_id`
+    try:
+        # Debugging: Check database connection
+        print(f"🔍 Fetching meals for: {user_email}")
 
-    if not meals:
-        return jsonify({"message": "No meals found"}), 404
+        meals = list(meal_collection.find({"user": user_email}, {"_id": 0}))  # Exclude `_id`
+        
+        # Debugging: Print fetched data
+        print(f"✅ Retrieved Meals: {meals}")
 
-    # Calculate overall total nutrition across all meals
-    total_nutrition = {
-        "calories": sum(meal["nutrition"].get("calories", 0) for meal in meals),
-        "protein": sum(meal["nutrition"].get("protein", 0) for meal in meals),
-        "carbs": sum(meal["nutrition"].get("carbs", 0) for meal in meals),
-        "fats": sum(meal["nutrition"].get("fats", 0) for meal in meals),
-    }
+        if not meals:
+            return jsonify({"meals": [], "message": "No meals found"}), 200  # Avoid returning 404
+        
+        # Calculate overall total nutrition across all meals
+        total_nutrition = {
+            "calories": sum(meal.get("nutrition", {}).get("calories", 0) for meal in meals),
+            "protein": sum(meal.get("nutrition", {}).get("protein", 0) for meal in meals),
+            "carbs": sum(meal.get("nutrition", {}).get("carbs", 0) for meal in meals),
+            "fats": sum(meal.get("nutrition", {}).get("fats", 0) for meal in meals),
+        }
 
-    return jsonify({"meals": meals, "overall_nutrition": total_nutrition}), 200
+        return jsonify({"meals": meals, "overall_nutrition": total_nutrition}), 200
+
+    except Exception as e:
+        print(f"⚠️ Error fetching meals: {e}")  # Debugging
+        return jsonify({"error": "Failed to load meals", "details": str(e)}), 500
+
 
 # ✅ Get Food Items
 @app.route("/api/get-food-items", methods=["GET"])
