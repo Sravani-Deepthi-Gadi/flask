@@ -292,46 +292,49 @@ def load_food_data():
 def get_logged_meals():
     try:
         user_email = get_jwt_identity()
+        logging.debug(f"Fetching meals for user: {user_email}")
+
         meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+        logging.debug(f"Retrieved meals: {meals}")
 
         if not meals:
             return jsonify({"message": "No meals logged yet!"}), 200
 
         food_data = load_food_data()
         if not food_data:
-            logging.error("Food data is empty or failed to load.")
-            return jsonify({"message": "Failed to load food data."}), 500
+            logging.error("❌ Food data failed to load.")
+            return jsonify({"error": "Failed to load food data."}), 500
 
         food_dict = {item["Food Name"]: item for item in food_data}
+        logging.debug(f"Food dictionary loaded: {list(food_dict.keys())[:5]}")
 
         for meal in meals:
+            if "meals" not in meal:
+                logging.error(f"❌ Missing 'meals' field in meal entry: {meal}")
+                return jsonify({"error": "Invalid meal entry format."}), 500
+
             meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
 
-            if not isinstance(meal["meals"], dict):  # ✅ Ensure meals is a dictionary
-                logging.error(f"Invalid meals format: {meal['meals']}")
-                return jsonify({"message": "Invalid meal format!"}), 500
-
             for meal_type, food_list in meal["meals"].items():
-                if not isinstance(food_list, list):  # ✅ Ensure food_list is a list
-                    logging.error(f"Invalid food list format: {food_list}")
+                if not isinstance(food_list, list):
+                    logging.error(f"❌ Expected a list of foods, got: {food_list}")
                     continue
 
                 for food in food_list:
-                    if food in food_dict:
-                        meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
-                        meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
-                        meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
-                        meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
-                    else:
-                        logging.warning(f"Food item '{food}' not found in food data.")
+                    if food not in food_dict:
+                        logging.warning(f"⚠ Food item '{food}' not found in database.")
+                        continue  # Skip missing food items
+
+                    meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
+                    meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
+                    meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
+                    meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
 
         return jsonify({"meals": meals}), 200
 
     except Exception as e:
-        logging.error(f"Error fetching meals: {str(e)}")
-        return jsonify({"message": "Error fetching meals, please try again later."}), 500
-
-
+        logging.error(f"❌ Critical error in get_logged_meals: {str(e)}")
+        return jsonify({"error": "Internal Server Error"}), 500
 
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
