@@ -243,6 +243,9 @@ def log_meal():
     data = request.json
     user_email = get_jwt_identity()
 
+    if not data or "meals" not in data:
+        return jsonify({"error": "Invalid request, 'meals' field is required"}), 400
+
     meal_entry = {
         "user": user_email,
         "meals": data.get("meals"),
@@ -250,6 +253,19 @@ def log_meal():
     meal_collection.insert_one(meal_entry)
 
     return jsonify({"message": "Meal logged successfully!"}), 201
+
+# ✅ Get Logged Meals (Added this)
+@app.route("/api/get-meals", methods=["GET"])
+@jwt_required()
+def get_meals():
+    user_email = get_jwt_identity()
+    
+    meals = list(meal_collection.find({"user": user_email}, {"_id": 0}))  # Exclude `_id`
+    
+    if not meals:
+        return jsonify({"message": "No meals found"}), 404
+    
+    return jsonify({"meals": meals}), 200
 
 # ✅ Load Food Database
 def load_food_data():
@@ -277,6 +293,7 @@ def load_food_data():
         print(f"⚠️ Error loading food database: {e}")
         return []
 
+# ✅ Get Food Items
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
     food_items = load_food_data()
