@@ -260,74 +260,77 @@ def log_meal():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
-        print(f"📂 Checking file at: {file_path}")  # Debugging
+        logging.debug(f"Checking file at: {file_path}")
 
         if not os.path.exists(file_path):
-            print("❌ File not found!")
+            logging.error("Food database file not found!")
             return []
 
         df = pd.read_excel(file_path, engine="openpyxl")
-        print("✅ First 5 rows of DataFrame:")
-        print(df.head())  # Debugging
 
-        # ✅ Match column names exactly as in Excel
-        required_columns = ["Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
-        
-        # ✅ Check if all required columns exist
+        required_columns = ["Food Name", "Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
         missing_columns = [col for col in required_columns if col not in df.columns]
+        
         if missing_columns:
-            print(f"❌ Missing columns in Excel: {missing_columns}")
+            logging.error(f"Missing columns in Excel: {missing_columns}")
             return []
 
-        # ✅ Convert data to a list of dictionaries
         food_items = df.to_dict(orient="records")
-        print(f"✅ Loaded Food Data: {food_items[:5]}")  # Debugging
+        logging.debug(f"Loaded Food Data: {food_items[:5]}")
         return food_items
 
     except Exception as e:
-        print(f"⚠ Error loading food database: {e}")
+        logging.error(f"Error loading food database: {e}")
         return []
 
 # ✅ Get Logged Meals with Nutritional Values
 @app.route("/api/get-logged-meals", methods=["GET"])
 @jwt_required()
 def get_logged_meals():
-    user_email = get_jwt_identity()
-    
-    meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
+    try:
+        user_email = get_jwt_identity()
+        meals = list(db.meal_collection.find({"user": user_email}, {"_id": 0}))
 
-    if not meals:
-        return jsonify({"message": "No meals logged yet!"}), 200
+        if not meals:
+            return jsonify({"message": "No meals logged yet!"}), 200
 
-    # ✅ Load food database
-    food_data = load_food_data()  # Ensure this function returns a list of dictionaries
-    
-    # ✅ Convert food list into a dictionary for quick lookup
-    food_dict = {item["Food Name"]: item for item in food_data}
+        food_data = load_food_data()
+        if not food_data:
+            logging.error("Food data is empty or failed to load.")
+            return jsonify({"message": "Failed to load food data."}), 500
 
-    # ✅ Calculate total nutrition values for logged meals
-    for meal in meals:
-        meal["nutrition"] = {
-            "calories": 0,
-            "protein": 0,
-            "carbs": 0,
-            "fats": 0
-        }
+        food_dict = {item["Food Name"]: item for item in food_data}
 
-        # 🔹 Fix: Iterate through the list of food items
-        for meal_type, food_list in meal["meals"].items():
-            for food in food_list:  # ✅ Iterate through list of foods
-                if food in food_dict:
-                    meal["nutrition"]["calories"] += food_dict[food]["Calories (kcal)"]
-                    meal["nutrition"]["protein"] += food_dict[food]["Protein (g)"]
-                    meal["nutrition"]["carbs"] += food_dict[food]["Carbohydrates (g)"]
-                    meal["nutrition"]["fats"] += food_dict[food]["Fats (g)"]
+        for meal in meals:
+            meal["nutrition"] = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
 
-    return jsonify({"meals": meals}), 200
+            if not isinstance(meal["meals"], dict):  # ✅ Ensure meals is a dictionary
+                logging.error(f"Invalid meals format: {meal['meals']}")
+                return jsonify({"message": "Invalid meal format!"}), 500
+
+            for meal_type, food_list in meal["meals"].items():
+                if not isinstance(food_list, list):  # ✅ Ensure food_list is a list
+                    logging.error(f"Invalid food list format: {food_list}")
+                    continue
+
+                for food in food_list:
+                    if food in food_dict:
+                        meal["nutrition"]["calories"] += food_dict[food].get("Calories (kcal)", 0)
+                        meal["nutrition"]["protein"] += food_dict[food].get("Protein (g)", 0)
+                        meal["nutrition"]["carbs"] += food_dict[food].get("Carbohydrates (g)", 0)
+                        meal["nutrition"]["fats"] += food_dict[food].get("Fats (g)", 0)
+                    else:
+                        logging.warning(f"Food item '{food}' not found in food data.")
+
+        return jsonify({"meals": meals}), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching meals: {str(e)}")
+        return jsonify({"message": "Error fetching meals, please try again later."}), 500
+
 
 
 @app.route("/api/get-food-items", methods=["GET"])
