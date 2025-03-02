@@ -237,6 +237,37 @@ logging.basicConfig(level=logging.DEBUG)
 # -----------------------------------
 # ✅ Meal Tracker Features
 # -----------------------------------
+def load_food_data():
+    try:
+        file_path = os.path.join(os.getcwd(), "food_database.xlsx")
+        print(f"📂 Checking file at: {file_path}")  # Debugging
+
+        if not os.path.exists(file_path):
+            print("❌ File not found!")
+            return {}
+
+        df = pd.read_excel(file_path, engine="openpyxl")
+        print("✅ First 5 rows of DataFrame:")
+        print(df.head())  # Debugging
+
+        if "Food Name" not in df.columns:
+            print(f"❌ Column 'Food Name' not found in Excel!")
+            return {}
+
+        # Convert DataFrame to dictionary with food name as key
+        food_dict = df.set_index("Food Name").to_dict(orient="index")
+
+        print(f"✅ Loaded Food Items: {list(food_dict.keys())}")  # Debugging
+        return food_dict
+
+    except Exception as e:
+        print(f"⚠️ Error loading food database: {e}")
+        return {}
+
+# Load food database once
+food_database = load_food_data()
+
+# ✅ Log a Meal
 @app.route("/api/log-meal", methods=["POST"])
 @jwt_required()
 def log_meal():
@@ -246,58 +277,67 @@ def log_meal():
     if not data or "meals" not in data:
         return jsonify({"error": "Invalid request, 'meals' field is required"}), 400
 
+    meals = data.get("meals")
+
+    # Initialize total nutrition values
+    total_calories = 0
+    total_protein = 0
+    total_carbs = 0
+    total_fats = 0
+
+    # Calculate total nutritional values
+    for meal_type, food_item in meals.items():
+        if food_item in food_database:
+            food_info = food_database[food_item]
+            total_calories += food_info.get("Calories", 0)
+            total_protein += food_info.get("Protein (g)", 0)
+            total_carbs += food_info.get("Carbohydrates (g)", 0)
+            total_fats += food_info.get("Fats (g)", 0)
+
     meal_entry = {
         "user": user_email,
-        "meals": data.get("meals"),
+        "meals": meals,
+        "nutrition": {
+            "calories": total_calories,
+            "protein": total_protein,
+            "carbs": total_carbs,
+            "fats": total_fats,
+        }
     }
+
     meal_collection.insert_one(meal_entry)
 
-    return jsonify({"message": "Meal logged successfully!"}), 201
+    return jsonify({
+        "message": "Meal logged successfully!",
+        "total_nutrition": meal_entry["nutrition"]
+    }), 201
 
-# ✅ Get Logged Meals (Added this)
+# ✅ Get Logged Meals (Modified to Include Total Nutrition)
 @app.route("/api/get-meals", methods=["GET"])
 @jwt_required()
 def get_meals():
     user_email = get_jwt_identity()
-    
+
     meals = list(meal_collection.find({"user": user_email}, {"_id": 0}))  # Exclude `_id`
-    
+
     if not meals:
         return jsonify({"message": "No meals found"}), 404
-    
-    return jsonify({"meals": meals}), 200
 
-# ✅ Load Food Database
-def load_food_data():
-    try:
-        file_path = os.path.join(os.getcwd(), "food_database.xlsx")
-        print(f"📂 Checking file at: {file_path}")  # Debugging
+    # Calculate overall total nutrition across all meals
+    total_nutrition = {
+        "calories": sum(meal["nutrition"].get("calories", 0) for meal in meals),
+        "protein": sum(meal["nutrition"].get("protein", 0) for meal in meals),
+        "carbs": sum(meal["nutrition"].get("carbs", 0) for meal in meals),
+        "fats": sum(meal["nutrition"].get("fats", 0) for meal in meals),
+    }
 
-        if not os.path.exists(file_path):
-            print("❌ File not found!")
-            return []
-
-        df = pd.read_excel(file_path, engine="openpyxl")
-        print("✅ First 5 rows of DataFrame:")
-        print(df.head())  # Debugging
-
-        if "Food Name" not in df.columns:
-            print(f"❌ Column 'Food Name' not found in Excel!")
-            return []
-
-        food_items = df["Food Name"].dropna().tolist()
-        print(f"✅ Loaded Food Items: {food_items}")  # Debugging
-        return food_items
-
-    except Exception as e:
-        print(f"⚠️ Error loading food database: {e}")
-        return []
+    return jsonify({"meals": meals, "overall_nutrition": total_nutrition}), 200
 
 # ✅ Get Food Items
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
-    food_items = load_food_data()
-    return jsonify({"food_items": food_items})
+    return jsonify({"food_items": list(food_database.keys())})
+
 
 @app.route("/api/track-progress", methods=["POST"])
 @jwt_required()
