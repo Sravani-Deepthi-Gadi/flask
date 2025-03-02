@@ -235,10 +235,6 @@ def get_user_groups():
 # Setting up logging
 logging.basicConfig(level=logging.DEBUG)
 
-# -----------------------------------
-# ✅ Meal Tracker Features
-# -----------------------------------
-# ✅ Load Food Database with Nutritional Values
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
@@ -301,20 +297,24 @@ def log_meal():
     total_carbs = 0
     total_fats = 0
 
-    # Calculate total nutritional values
-    for meal_type, food_item in meals.items():
-        if food_item in food_database:
-            food_info = food_database[food_item]
-            total_calories += food_info.get("Calories (kcal)", 0)
-            total_protein += food_info.get("Protein (g)", 0)
-            total_carbs += food_info.get("Carbohydrates (g)", 0)
-            total_fats += food_info.get("Fats (g)", 0)
-        else:
-            print(f"⚠️ Warning: '{food_item}' not found in database!")
+    # Process each meal type (e.g., breakfast, lunch, dinner)
+    for meal_type, food_items in meals.items():
+        if not isinstance(food_items, list):  # Ensure food_items is a list
+            food_items = [food_items]  # Convert single entry into a list
+        
+        for food_item in food_items:
+            if food_item in food_database:
+                food_info = food_database[food_item]
+                total_calories += food_info.get("Calories (kcal)", 0)
+                total_protein += food_info.get("Protein (g)", 0)
+                total_carbs += food_info.get("Carbohydrates (g)", 0)
+                total_fats += food_info.get("Fats (g)", 0)
+            else:
+                print(f"⚠️ Warning: '{food_item}' not found in database!")
 
     meal_entry = {
         "user": user_email,
-        "meals": meals,
+        "meals": meals,  # Now supports multiple items per meal type
         "nutrition": {
             "calories": total_calories,
             "protein": total_protein,
