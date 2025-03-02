@@ -250,7 +250,7 @@ def load_food_data():
         print("✅ First 5 rows of DataFrame:")
         print(df.head())
         
-        required_columns = {"Food Name", "Calories", "Protein (g)", "Carbohydrates (g)", "Fats (g)", "Fiber (g)", "Sugars (g)"}
+        required_columns = {"Food Name", "Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)", "Fiber (g)", "Sugars (g)"}
         if not required_columns.issubset(df.columns):
             print("❌ Missing required columns in Excel!")
             return {}
