@@ -72,20 +72,36 @@ def login():
 
     return jsonify({"error":"Invalid email or password"}),401
 
-@app.route("/api/log-sleep",methods=["POST"])
+@app.route("/api/log-sleep", methods=["POST"])
 @jwt_required()
 def log_sleep():
-    data=request.json
-    user_email=get_jwt_identity()
+    data = request.json
+    user_email = get_jwt_identity()
 
-    sleep_entry={
-        "user":user_email,
-        "date":data.get("date"),
-        "sleep_hours":float(data.get("sleep_hours")),
+    sleep_hours = float(data.get("sleep_hours", 0))
+    sleep_entry = {
+        "user": user_email,
+        "date": data.get("date"),
+        "sleep_hours": sleep_hours,
     }
     sleep_collection.insert_one(sleep_entry)
 
-    return jsonify({"message":"Sleep data logged successfully!"}),201
+    achievement = None
+    if sleep_hours > 6:
+        achievement = "🌙 Well-Rested Badge"
+        achievements_collection.insert_one({
+            "user": user_email,
+            "title": "🎖 Well-Rested Badge",
+            "description": "Congratulations! You've earned the Well-Rested Badge for sleeping more than 6 hours!",
+            "likes": 0,
+            "comments": []
+        })
+
+    return jsonify({
+        "message": "Sleep data logged successfully!",
+        "achievement": achievement
+    }), 201
+
 
 @app.route("/api/get-achievements",methods=["GET"])
 @jwt_required()
