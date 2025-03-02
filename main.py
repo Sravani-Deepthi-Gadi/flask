@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import traceback
 import logging
+from datetime import datetime
 
 from itsdangerous import URLSafeTimedSerializer
 
@@ -276,6 +277,8 @@ def load_food_data():
 food_database = load_food_data()
 
 # ✅ Log a Meal with Nutrition Calculation
+from datetime import datetime
+
 @app.route("/api/log-meal", methods=["POST"])
 @jwt_required()
 def log_meal():
@@ -286,6 +289,11 @@ def log_meal():
         return jsonify({"error": "Invalid request, 'meals' field is required"}), 400
 
     meals = data.get("meals")
+
+    # Ensure `food_database` is loaded
+    global food_database
+    if not isinstance(food_database, dict) or not food_database:
+        return jsonify({"error": "Food database not loaded properly"}), 500
 
     # Initialize total nutrition values
     total_calories = 0
@@ -312,14 +320,16 @@ def log_meal():
             "protein": total_protein,
             "carbs": total_carbs,
             "fats": total_fats,
-        }
+        },
+        "date": datetime.utcnow().isoformat()  # Store the current UTC time
     }
 
     meal_collection.insert_one(meal_entry)
 
     return jsonify({
         "message": "Meal logged successfully!",
-        "total_nutrition": meal_entry["nutrition"]
+        "total_nutrition": meal_entry["nutrition"],
+        "date": meal_entry["date"]
     }), 201
 
 @app.route("/api/get-meals", methods=["GET"])
