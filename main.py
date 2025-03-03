@@ -248,47 +248,42 @@ def get_user_groups():
     return jsonify({"groups": group_names})
 
 
-# Setting up logging
+
 logging.basicConfig(level=logging.DEBUG)
 
 def load_food_data():
     try:
         file_path = os.path.join(os.getcwd(), "food_database.xlsx")
-        print(f"📂 Checking file at: {file_path}")  # Debugging
-
+        print(f"📂 Checking file at: {file_path}")  
         if not os.path.exists(file_path):
             print("❌ File not found!")
             return {}
 
         df = pd.read_excel(file_path, engine="openpyxl")
         print("✅ First 5 rows of DataFrame:")
-        print(df.head())  # Debugging
-
+        print(df.head())  
         required_columns = ["Food Name", "Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
         for col in required_columns:
             if col not in df.columns:
                 print(f"❌ Column '{col}' not found in Excel!")
                 return {}
 
-        # Fill NaN values and convert numeric columns
+        
         df = df.fillna(0)
         numeric_columns = ["Calories (kcal)", "Protein (g)", "Carbohydrates (g)", "Fats (g)"]
         df[numeric_columns] = df[numeric_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
 
-        # Convert DataFrame to dictionary with food name as key
+       
         food_dict = df.set_index("Food Name")[numeric_columns].to_dict(orient="index")
 
-        print(f"✅ Loaded Food Items: {list(food_dict.keys())}")  # Debugging
+        print(f"✅ Loaded Food Items: {list(food_dict.keys())}") 
         return food_dict
 
     except Exception as e:
         print(f"⚠️ Error loading food database: {e}")
         return {}
 
-# Load food database once
 food_database = load_food_data()
-
-# ✅ Log a Meal with Nutrition Calculation
 from datetime import datetime
 
 @app.route("/api/log-meal", methods=["POST"])
@@ -302,21 +297,21 @@ def log_meal():
 
     meals = data.get("meals")
 
-    # Ensure `food_database` is loaded
+   
     global food_database
     if not isinstance(food_database, dict) or not food_database:
         return jsonify({"error": "Food database not loaded properly"}), 500
 
-    # Initialize total nutrition values
+   
     total_calories = 0
     total_protein = 0
     total_carbs = 0
     total_fats = 0
 
-    # Process each meal type (e.g., breakfast, lunch, dinner)
+    
     for meal_type, food_items in meals.items():
-        if not isinstance(food_items, list):  # Ensure food_items is a list
-            food_items = [food_items]  # Convert single entry into a list
+        if not isinstance(food_items, list): 
+            food_items = [food_items] 
         
         for food_item in food_items:
             if food_item in food_database:
@@ -330,14 +325,14 @@ def log_meal():
 
     meal_entry = {
         "user": user_email,
-        "meals": meals,  # Now supports multiple items per meal type
+        "meals": meals, 
         "nutrition": {
             "calories": total_calories,
             "protein": total_protein,
             "carbs": total_carbs,
             "fats": total_fats,
         },
-        "date": datetime.utcnow().isoformat()  # Store the current UTC time
+        "date": datetime.utcnow().isoformat()  
     }
 
     meal_collection.insert_one(meal_entry)
@@ -354,18 +349,15 @@ def get_meals():
     user_email = get_jwt_identity()
 
     try:
-        # Debugging: Check database connection
+       
         print(f"🔍 Fetching meals for: {user_email}")
 
-        meals = list(meal_collection.find({"user": user_email}, {"_id": 0}))  # Exclude `_id`
+        meals = list(meal_collection.find({"user": user_email}, {"_id": 0})) 
         
-        # Debugging: Print fetched data
         print(f"✅ Retrieved Meals: {meals}")
 
         if not meals:
-            return jsonify({"meals": [], "message": "No meals found"}), 200  # Avoid returning 404
-        
-        # Calculate overall total nutrition across all meals
+            return jsonify({"meals": [], "message": "No meals found"}), 200 
         total_nutrition = {
             "calories": sum(meal.get("nutrition", {}).get("calories", 0) for meal in meals),
             "protein": sum(meal.get("nutrition", {}).get("protein", 0) for meal in meals),
@@ -376,11 +368,9 @@ def get_meals():
         return jsonify({"meals": meals, "overall_nutrition": total_nutrition}), 200
 
     except Exception as e:
-        print(f"⚠️ Error fetching meals: {e}")  # Debugging
+        print(f"⚠️ Error fetching meals: {e}")  
         return jsonify({"error": "Failed to load meals", "details": str(e)}), 500
 
-
-# ✅ Get Food Items
 @app.route("/api/get-food-items", methods=["GET"])
 def get_food_items():
     return jsonify({"food_items": list(food_database.keys())})
@@ -391,7 +381,7 @@ def track_progress():
     user_email = get_jwt_identity()
 
     progress = progress_collection.find_one({"user": user_email}) or {"completed_days": 0}
-    completed_days = progress["completed_days"] + 1  # ✅ Increment workout days
+    completed_days = progress["completed_days"] + 1 
     achievement_days = completed_days
 
     badge = None
@@ -559,8 +549,8 @@ def post_badge():
 @app.route("/test-read-excel", methods=["GET"])
 def test_read_excel():
     try:
-        file_path = os.path.join(os.getcwd(), "food_database.xlsx")  # Ensure correct path
-        df = pd.read_excel(file_path)  # Read the Excel file
+        file_path = os.path.join(os.getcwd(), "food_database.xlsx") 
+        df = pd.read_excel(file_path) 
         return jsonify({
             "status": "success",
             "columns": df.columns.tolist(),
